@@ -248,7 +248,7 @@ export default function Home() {
 
   return (
     <main className="relative h-full flex flex-col">
-      <div className="flex-1 relative">
+      <div className="flex-1 relative min-h-0">
         {screen === "map" && (
           <>
             <DeliveryMap
