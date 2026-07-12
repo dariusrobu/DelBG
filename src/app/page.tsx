@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { Client, MenuItem, DailyManifest } from "@/types";
+import { Client, MenuItem, DailyManifest, ManifestSection } from "@/types";
 import { getAllClients, createClient, updateClient } from "@/lib/clients";
 import { createMenuItem, updateMenuItem } from "@/lib/menus";
-import { createManifest } from "@/lib/manifests";
+import { createManifest, getMostRecentManifest } from "@/lib/manifests";
 import { startAutoSync } from "@/lib/sync";
 import PinCard from "@/components/PinCard";
 import ClientList from "@/components/ClientList";
@@ -62,6 +62,9 @@ export default function Home() {
   // Driver view state
   const [drivingManifestId, setDrivingManifestId] = useState<string | null>(null);
 
+  // Recent manifest for map section filtering
+  const [recentManifest, setRecentManifest] = useState<DailyManifest | null>(null);
+
   // Sync state
   const loadClients = useCallback(async () => {
     const data = await getAllClients();
@@ -72,11 +75,23 @@ export default function Home() {
     /* eslint-disable react-hooks/set-state-in-effect */
     loadClients();
     startAutoSync();
+    getMostRecentManifest().then((m) => setRecentManifest(m ?? null));
   }, [loadClients]);
 
   const handleClientSelect = useCallback((client: Client) => {
     setSelectedClient(client);
   }, []);
+
+  // Build client → section map from recent manifest
+  const clientSectionMap = new Map<string, string>();
+  const manifestSections: ManifestSection[] = recentManifest?.sections ?? [];
+  if (recentManifest) {
+    for (const stop of recentManifest.stops) {
+      if (!stop.isWalkIn && stop.clientId && stop.sectionId) {
+        clientSectionMap.set(stop.clientId, stop.sectionId);
+      }
+    }
+  }
 
   const handleClientSave = async (data: Omit<Client, "id">) => {
     if (editingClient) {
@@ -236,7 +251,12 @@ export default function Home() {
       <div className="flex-1 relative">
         {screen === "map" && (
           <>
-            <DeliveryMap clients={clients} onClientSelect={handleClientSelect} />
+            <DeliveryMap
+              clients={clients}
+              onClientSelect={handleClientSelect}
+              sections={manifestSections}
+              clientSectionMap={clientSectionMap}
+            />
             {selectedClient && (
               <PinCard
                 client={selectedClient}

@@ -6,7 +6,7 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import "leaflet.markercluster";
-import { Client } from "@/types";
+import { Client, ManifestSection } from "@/types";
 import { getAllTags } from "@/lib/clients";
 
 // Fix for default marker icons in Leaflet with bundlers
@@ -23,21 +23,44 @@ const DEFAULT_ZOOM = 13;
 interface DeliveryMapProps {
   clients: Client[];
   onClientSelect: (client: Client) => void;
+  sections?: ManifestSection[];
+  clientSectionMap?: Map<string, string>;
 }
 
-export default function DeliveryMap({ clients, onClientSelect }: DeliveryMapProps) {
+export default function DeliveryMap({
+  clients,
+  onClientSelect,
+  sections = [],
+  clientSectionMap = new Map(),
+}: DeliveryMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const [filterTag, setFilterTag] = useState<string>("");
+  const [filterSection, setFilterSection] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
 
   useEffect(() => {
     getAllTags().then(setAllTags);
   }, []);
 
-  const filteredClients = filterTag
-    ? clients.filter((c) => c.tags?.includes(filterTag))
-    : clients;
+  const sortedSections = [...sections].sort((a, b) => a.position - b.position);
+
+  // Clients with no section assignment (for "No section" pill)
+  const unsectionedClientIds = new Set(
+    clients
+      .filter((c) => !clientSectionMap.has(c.id))
+      .map((c) => c.id)
+  );
+
+  const filteredClients = clients.filter((c) => {
+    const matchesTag = !filterTag || c.tags?.includes(filterTag);
+    const matchesSection =
+      filterSection === null ||
+      (filterSection === "__none__"
+        ? !clientSectionMap.has(c.id)
+        : clientSectionMap.get(c.id) === filterSection);
+    return matchesTag && matchesSection;
+  });
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -98,40 +121,105 @@ export default function DeliveryMap({ clients, onClientSelect }: DeliveryMapProp
     };
   }, [filteredClients, onClientSelect]);
 
+  const hasSections = sortedSections.length > 0;
+  const hasTags = allTags.length > 0;
+  const hasFilters = hasSections || hasTags;
+
+  if (!hasFilters) {
+    return (
+      <div className="fixed inset-0 w-full h-full" style={{ zIndex: 0 }}>
+        <div ref={mapRef} className="w-full h-full" />
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 w-full h-full" style={{ zIndex: 0 }}>
-      {/* Tag filter bar */}
-      {allTags.length > 0 && (
-        <div className="absolute top-2 left-2 right-2 z-[1000] flex flex-wrap gap-1.5 bg-white/95 backdrop-blur-sm rounded-lg p-2 shadow-md">
-          <button
-            onClick={() => setFilterTag("")}
-            className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-              filterTag === ""
-                ? "bg-blue-600 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            All
-          </button>
-          {allTags.map((tag) => (
+      {/* Filter bar */}
+      <div className="absolute top-2 left-2 right-2 z-[1000] flex flex-col gap-1.5 bg-white/95 backdrop-blur-sm rounded-lg p-2 shadow-md">
+        {/* Section filters */}
+        {hasSections && (
+          <div className="flex flex-wrap gap-1.5">
             <button
-              key={tag}
-              onClick={() => setFilterTag(filterTag === tag ? "" : tag)}
+              onClick={() => setFilterSection(null)}
               className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-                filterTag === tag
+                filterSection === null
                   ? "bg-blue-600 text-white"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              {tag}
+              All
             </button>
-          ))}
-        </div>
-      )}
-      <div
-        ref={mapRef}
-        className="w-full h-full"
-      />
+            {sortedSections.map((sec) => {
+              const count = clients.filter(
+                (c) => clientSectionMap.get(c.id) === sec.id
+              ).length;
+              return (
+                <button
+                  key={sec.id}
+                  onClick={() =>
+                    setFilterSection(filterSection === sec.id ? null : sec.id)
+                  }
+                  className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+                    filterSection === sec.id
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {sec.name || `Section ${sec.position + 1}`}
+                  {count > 0 && ` (${count})`}
+                </button>
+              );
+            })}
+            {unsectionedClientIds.size > 0 && (
+              <button
+                onClick={() =>
+                  setFilterSection(
+                    filterSection === "__none__" ? null : "__none__"
+                  )
+                }
+                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+                  filterSection === "__none__"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                No section ({unsectionedClientIds.size})
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Tag filters */}
+        {hasTags && (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setFilterTag("")}
+              className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+                filterTag === ""
+                  ? "bg-gray-200 text-gray-700"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              All tags
+            </button>
+            {allTags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setFilterTag(filterTag === tag ? "" : tag)}
+                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+                  filterTag === tag
+                    ? "bg-gray-700 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div ref={mapRef} className="w-full h-full" />
     </div>
   );
 }
