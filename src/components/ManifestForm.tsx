@@ -35,7 +35,10 @@ export default function ManifestForm({ manifest, onSave, onCancel }: ManifestFor
     })();
   }, [manifest.sections]);
 
+  const addedClientIds = new Set(stops.filter((s) => !s.isWalkIn).map((s) => s.clientId));
+
   const filteredClients = clients.filter((c) => {
+    if (addedClientIds.has(c.id)) return false;
     const matchesSearch = !clientSearch || (() => {
       const q = clientSearch.toLowerCase();
       return (
