@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { Client, MenuItem, DailyManifest, ManifestSection } from "@/types";
 import { getAllClients, createClient, updateClient } from "@/lib/clients";
 import { createMenuItem, updateMenuItem } from "@/lib/menus";
-import { createManifest, getMostRecentManifest } from "@/lib/manifests";
+import { createManifest, getAllManifests } from "@/lib/manifests";
 import { startAutoSync } from "@/lib/sync";
 import PinCard from "@/components/PinCard";
 import ClientList from "@/components/ClientList";
@@ -62,8 +62,9 @@ export default function Home() {
   // Driver view state
   const [drivingManifestId, setDrivingManifestId] = useState<string | null>(null);
 
-  // Recent manifest for map section filtering
-  const [recentManifest, setRecentManifest] = useState<DailyManifest | null>(null);
+  // Manifests for map filtering
+  const [allManifests, setAllManifests] = useState<DailyManifest[]>([]);
+  const [selectedManifestId, setSelectedManifestId] = useState<string | null>(null);
 
   // Sync state
   const loadClients = useCallback(async () => {
@@ -71,22 +72,29 @@ export default function Home() {
     setClients(data);
   }, []);
 
+  const loadManifests = useCallback(async () => {
+    const data = await getAllManifests();
+    setAllManifests(data);
+    setSelectedManifestId((prev) => prev ?? (data.length > 0 ? data[0].id : null));
+  }, []);
+
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
     loadClients();
+    loadManifests();
     startAutoSync();
-    getMostRecentManifest().then((m) => setRecentManifest(m ?? null));
-  }, [loadClients]);
+  }, [loadClients, loadManifests]);
 
   const handleClientSelect = useCallback((client: Client) => {
     setSelectedClient(client);
   }, []);
 
-  // Build client → section map from recent manifest
+  // Build client → section map from selected manifest
+  const selectedManifest = allManifests.find((m) => m.id === selectedManifestId) ?? null;
   const clientSectionMap = new Map<string, string>();
-  const manifestSections: ManifestSection[] = recentManifest?.sections ?? [];
-  if (recentManifest) {
-    for (const stop of recentManifest.stops) {
+  const manifestSections: ManifestSection[] = selectedManifest?.sections ?? [];
+  if (selectedManifest) {
+    for (const stop of selectedManifest.stops) {
       if (!stop.isWalkIn && stop.clientId && stop.sectionId) {
         clientSectionMap.set(stop.clientId, stop.sectionId);
       }
@@ -132,11 +140,14 @@ export default function Home() {
   const handleCreateBlankManifest = async () => {
     const today = new Date().toISOString().split("T")[0];
     const manifest = await createManifest({ date: today, stops: [] });
+    await loadManifests();
+    setSelectedManifestId(manifest.id);
     setEditingManifest(manifest);
   };
 
   const handleManifestSave = () => {
     setEditingManifest(null);
+    loadManifests();
   };
 
   // --- Full-screen form views ---
@@ -256,6 +267,9 @@ export default function Home() {
               onClientSelect={handleClientSelect}
               sections={manifestSections}
               clientSectionMap={clientSectionMap}
+              manifests={allManifests}
+              selectedManifestId={selectedManifestId}
+              onManifestSelect={setSelectedManifestId}
             />
             {selectedClient && (
               <PinCard
