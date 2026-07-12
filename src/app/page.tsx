@@ -6,7 +6,7 @@ import { Client, MenuItem, DailyManifest } from "@/types";
 import { getAllClients, createClient, updateClient } from "@/lib/clients";
 import { createMenuItem, updateMenuItem } from "@/lib/menus";
 import { createManifest } from "@/lib/manifests";
-import { getPendingCount, startAutoSync } from "@/lib/sync";
+import { startAutoSync } from "@/lib/sync";
 import PinCard from "@/components/PinCard";
 import ClientList from "@/components/ClientList";
 import MenuList from "@/components/MenuList";
@@ -63,9 +63,6 @@ export default function Home() {
   const [drivingManifestId, setDrivingManifestId] = useState<string | null>(null);
 
   // Sync state
-  const [pendingCount, setPendingCount] = useState(0);
-  const [isOnline, setIsOnline] = useState(true);
-
   const loadClients = useCallback(async () => {
     const data = await getAllClients();
     setClients(data);
@@ -75,21 +72,6 @@ export default function Home() {
     /* eslint-disable react-hooks/set-state-in-effect */
     loadClients();
     startAutoSync();
-
-    const updatePending = () => setPendingCount(getPendingCount());
-    const updateOnline = () => setIsOnline(navigator.onLine);
-    updateOnline();
-    updatePending();
-
-    window.addEventListener("online", updateOnline);
-    window.addEventListener("offline", updateOnline);
-    const interval = setInterval(updatePending, 2000);
-
-    return () => {
-      window.removeEventListener("online", updateOnline);
-      window.removeEventListener("offline", updateOnline);
-      clearInterval(interval);
-    };
   }, [loadClients]);
 
   const handleClientSelect = useCallback((client: Client) => {
@@ -314,19 +296,6 @@ export default function Home() {
           </div>
         )}
       </div>
-
-      {/* Sync status bar */}
-      {(!isOnline || pendingCount > 0) && (
-        <div className={`px-3 py-1.5 text-xs font-medium flex items-center gap-2 ${
-          isOnline ? "bg-yellow-50 text-yellow-700" : "bg-red-50 text-red-700"
-        }`}>
-          <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-yellow-500" : "bg-red-500"}`} />
-          {!isOnline && "Offline"}
-          {isOnline && pendingCount > 0 && (
-              <span>{pendingCount} pending</span>
-          )}
-        </div>
-      )}
 
       {/* Bottom navigation */}
       <nav className="sticky bottom-0 z-20 bg-white border-t border-gray-200 flex">
