@@ -11,7 +11,7 @@ interface SyncMutation {
 
 export async function POST(request: Request) {
   const { mutations, lastSyncTimestamp } = await request.json();
-  const db = getDb();
+  const db = await getDb();
 
   for (const m of mutations as SyncMutation[]) {
     const ts = m.timestamp;

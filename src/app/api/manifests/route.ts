@@ -9,7 +9,7 @@ interface ManifestRow {
 }
 
 export async function GET() {
-  const db = getDb();
+  const db = await getDb();
   const result = await db.execute("SELECT * FROM manifests ORDER BY date DESC");
   const rows = result.rows as unknown as ManifestRow[];
 
@@ -25,7 +25,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const db = getDb();
+  const db = await getDb();
 
   await db.execute(
     `INSERT INTO manifests (id, date, stops_json, sections_json, updated_at)
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   const body = await request.json();
-  const db = getDb();
+  const db = await getDb();
 
   await db.execute(
     `UPDATE manifests
@@ -65,7 +65,7 @@ export async function DELETE(request: Request) {
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const db = getDb();
+  const db = await getDb();
   await db.execute("DELETE FROM manifests WHERE id = ?", [id]);
   return NextResponse.json({ ok: true });
 }

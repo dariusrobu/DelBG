@@ -1,8 +1,9 @@
 import { createClient, type Client } from "@libsql/client";
 
 let client: Client | null = null;
+let initialized = false;
 
-export function getDb(): Client {
+export async function getDb(): Promise<Client> {
   if (client) return client;
 
   const url = process.env.TURSO_DATABASE_URL;
@@ -15,51 +16,50 @@ export function getDb(): Client {
     authToken,
   });
 
-  return client;
-}
+  if (!initialized) {
+    await client.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS clients (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        street TEXT NOT NULL,
+        number TEXT NOT NULL,
+        bloc TEXT,
+        apartment TEXT,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        phone TEXT,
+        notes TEXT,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
 
-export async function initDb(): Promise<void> {
-  const db = getDb();
+      CREATE TABLE IF NOT EXISTS menu_items (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        date TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
 
-  await db.executeMultiple(`
-    CREATE TABLE IF NOT EXISTS clients (
-      id TEXT PRIMARY KEY,
-      name TEXT,
-      street TEXT NOT NULL,
-      number TEXT NOT NULL,
-      bloc TEXT,
-      apartment TEXT,
-      lat REAL NOT NULL,
-      lng REAL NOT NULL,
-      phone TEXT,
-      notes TEXT,
-      tags_json TEXT NOT NULL DEFAULT '[]',
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+      CREATE TABLE IF NOT EXISTS manifests (
+        id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        stops_json TEXT NOT NULL DEFAULT '[]',
+        sections_json TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
 
-    CREATE TABLE IF NOT EXISTS menu_items (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      date TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+    try {
+      await client.execute("CREATE INDEX IF NOT EXISTS idx_manifests_date ON manifests(date)");
+      await client.execute("CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name)");
+      await client.execute("CREATE INDEX IF NOT EXISTS idx_menu_items_date ON menu_items(date)");
+    } catch {
+      // Indexes may already exist
+    }
 
-    CREATE TABLE IF NOT EXISTS manifests (
-      id TEXT PRIMARY KEY,
-      date TEXT NOT NULL,
-      stops_json TEXT NOT NULL DEFAULT '[]',
-      sections_json TEXT NOT NULL DEFAULT '[]',
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
-  // Create indexes separately (IF NOT INDEX may not work on all backends)
-  try {
-    await db.execute("CREATE INDEX IF NOT EXISTS idx_manifests_date ON manifests(date)");
-    await db.execute("CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name)");
-    await db.execute("CREATE INDEX IF NOT EXISTS idx_menu_items_date ON menu_items(date)");
-  } catch {
-    // Indexes may already exist
+    initialized = true;
   }
+
+  return client;
 }
