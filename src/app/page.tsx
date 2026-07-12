@@ -6,7 +6,7 @@ import { Client, MenuItem, DailyManifest } from "@/types";
 import { getAllClients, createClient, updateClient } from "@/lib/clients";
 import { createMenuItem, updateMenuItem } from "@/lib/menus";
 import { createManifest } from "@/lib/manifests";
-import { getPendingCount, pushSync, startAutoSync } from "@/lib/sync";
+import { getPendingCount, startAutoSync } from "@/lib/sync";
 import PinCard from "@/components/PinCard";
 import ClientList from "@/components/ClientList";
 import MenuList from "@/components/MenuList";
@@ -323,12 +323,7 @@ export default function Home() {
           <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-yellow-500" : "bg-red-500"}`} />
           {!isOnline && "Offline"}
           {isOnline && pendingCount > 0 && (
-            <>
               <span>{pendingCount} pending</span>
-              <button onClick={() => pushSync()} className="underline ml-auto">
-                Sync now
-              </button>
-            </>
           )}
         </div>
       )}
