@@ -50,10 +50,8 @@ export function getPendingCount(): number {
 }
 
 export async function pushSync(): Promise<boolean> {
-  const queue = getSyncQueue();
-  if (queue.length === 0) return true;
-
   try {
+    const queue = getSyncQueue();
     const lastSync = getLastSyncTimestamp();
     const res = await fetch("/api/sync", {
       method: "POST",
@@ -151,7 +149,7 @@ export function startAutoSync(intervalMs = 30000): void {
 
   // Periodic sync attempt
   syncInterval = setInterval(() => {
-    if (navigator.onLine && getPendingCount() > 0) {
+    if (navigator.onLine) {
       pushSync();
     }
   }, intervalMs);
