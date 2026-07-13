@@ -10,6 +10,7 @@ const SEBES_CENTER: [number, number] = [45.95, 23.57];
 
 interface ClientFormProps {
   initial?: Client;
+  allClients?: Client[];
   onSave: (data: Omit<Client, "id">) => void;
   onCancel: () => void;
 }
@@ -24,7 +25,7 @@ function parseCoords(input: string): { lat: number; lng: number } | null {
   return { lat, lng };
 }
 
-export default function ClientForm({ initial, onSave, onCancel }: ClientFormProps) {
+export default function ClientForm({ initial, allClients = [], onSave, onCancel }: ClientFormProps) {
   const [street, setStreet] = useState(initial?.street ?? "");
   const [number, setNumber] = useState(initial?.number ?? "");
   const [bloc, setBloc] = useState(initial?.bloc ?? "");
@@ -39,6 +40,31 @@ export default function ClientForm({ initial, onSave, onCancel }: ClientFormProp
   const [tagInput, setTagInput] = useState("");
   const [allTags, setAllTags] = useState<string[]>([]);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const [copyQuery, setCopyQuery] = useState("");
+  const [showCopyDropdown, setShowCopyDropdown] = useState(false);
+
+  const isCreateMode = !initial;
+  const filteredCopyClients = isCreateMode && copyQuery
+    ? allClients.filter((c) => {
+        const q = copyQuery.toLowerCase();
+        const addr = `str ${c.street} nr ${c.number} ${c.bloc ?? ""}`.toLowerCase();
+        const cname = (c.name ?? "").toLowerCase();
+        return addr.includes(q) || cname.includes(q);
+      })
+    : [];
+
+  const handleCopyFrom = (client: Client) => {
+    setStreet(client.street);
+    setNumber(client.number);
+    setBloc(client.bloc ?? "");
+    setApartment(client.apartment ?? "");
+    setPhone(client.phone ?? "");
+    setNotes(client.notes ?? "");
+    setCoordsInput(`${client.lat}, ${client.lng}`);
+    setTags(client.tags ?? []);
+    setCopyQuery("");
+    setShowCopyDropdown(false);
+  };
 
   // Load existing tags for autocomplete
   useEffect(() => {
@@ -137,6 +163,53 @@ export default function ClientForm({ initial, onSave, onCancel }: ClientFormProp
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Copy from existing */}
+      {isCreateMode && allClients.length > 0 && (
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-gray-700">
+            Copy address from existing client?
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search clients..."
+              value={copyQuery}
+              onChange={(e) => {
+                setCopyQuery(e.target.value);
+                setShowCopyDropdown(e.target.value.length > 0);
+              }}
+              onFocus={() => setShowCopyDropdown(copyQuery.length > 0)}
+              onBlur={() => setTimeout(() => setShowCopyDropdown(false), 200)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            />
+            {showCopyDropdown && filteredCopyClients.length > 0 && (
+              <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
+                {filteredCopyClients.slice(0, 8).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleCopyFrom(c);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+                  >
+                    <span className="font-medium text-gray-900">
+                      {c.name || `Str. ${c.street} nr. ${c.number}`}
+                    </span>
+                    <span className="text-gray-500 ml-2">
+                      Str. {c.street} nr. {c.number}
+                      {c.bloc ? ` bl. ${c.bloc}` : ""}
+                      {c.apartment ? ` ap. ${c.apartment}` : ""}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Address */}
       <fieldset className="space-y-3">
         <legend className="text-sm font-medium text-gray-700">Address *</legend>

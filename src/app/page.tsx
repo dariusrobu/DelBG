@@ -216,6 +216,7 @@ export default function Home() {
         <div className="p-4 max-w-lg mx-auto">
           <ClientForm
             initial={editingClient ?? undefined}
+            allClients={clients}
             onSave={handleClientSave}
             onCancel={() => {
               setShowClientForm(false);
