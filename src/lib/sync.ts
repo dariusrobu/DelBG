@@ -88,18 +88,21 @@ async function applyServerChanges(changes: {
   manifests: Record<string, unknown>[];
 }): Promise<void> {
   const db = await getDB();
+  const serverClientIds = new Set(changes.clients.map((c) => c.id as string));
+  const serverMenuIds = new Set(changes.menuItems.map((m) => m.id as string));
+  const serverManifestIds = new Set(changes.manifests.map((m) => m.id as string));
 
   // Apply client changes
   for (const c of changes.clients) {
     const client = {
       id: c.id as string,
       name: (c.name as string) || undefined,
-      street: c.street as string,
-      number: c.number as string,
+      street: (c.street as string) ?? "",
+      number: (c.number as string) ?? "",
       bloc: (c.bloc as string) || undefined,
       apartment: (c.apartment as string) || undefined,
-      lat: c.lat as number,
-      lng: c.lng as number,
+      lat: (c.lat as number) ?? 0,
+      lng: (c.lng as number) ?? 0,
       phone: (c.phone as string) || undefined,
       notes: (c.notes as string) || undefined,
       tags: (c.tags as string[]) ?? [],
@@ -127,6 +130,26 @@ async function applyServerChanges(changes: {
       sections: (m.sections as ManifestSection[]) ?? [],
     };
     await db.put("manifests", manifest);
+  }
+
+  // Full-sync cleanup: remove local entries not present on server
+  const allClients = await db.getAll("clients");
+  for (const local of allClients) {
+    if (!serverClientIds.has(local.id)) {
+      await db.delete("clients", local.id);
+    }
+  }
+  const allMenus = await db.getAll("menuItems");
+  for (const local of allMenus) {
+    if (!serverMenuIds.has(local.id)) {
+      await db.delete("menuItems", local.id);
+    }
+  }
+  const allManifests = await db.getAll("manifests");
+  for (const local of allManifests) {
+    if (!serverManifestIds.has(local.id)) {
+      await db.delete("manifests", local.id);
+    }
   }
 }
 
