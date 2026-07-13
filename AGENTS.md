@@ -6,10 +6,6 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-## Project status
-
-Phase 4 complete — IndexedDB + client/menu CRUD, pin-drop for coordinates, manifest creation and route planning. See `PRD.md` for full requirements.
-
 ## Commands
 
 ```bash
@@ -20,58 +16,84 @@ npm run lint         # ESLint (excludes PWA-generated files in public/)
 npx tsc --noEmit     # typecheck
 ```
 
-**Build quirk:** `npm run build` passes `--webpack` because `@ducanh2912/next-pwa` requires webpack and Next.js 16 defaults to Turbopack. Do not remove this flag.
+**Build quirk:** `npm run build` and `npm run dev` both pass `--webpack` because `@ducanh2912/next-pwa` requires webpack and Next.js 16 defaults to Turbopack. Do not remove this flag.
 
 ## Tech stack
 
 | Layer | Tech | Notes |
 |-------|------|-------|
 | Frontend | React 19 + Next.js 16 | Client-side rendering for map views |
-| PWA | `@ducanh2912/next-pwa` | Service worker in `public/sw.js`, disabled in dev |
-| Maps | Leaflet + react-leaflet | Pin tooltips show address; no clustering yet (Phase 6) |
+| Backend | Next.js API routes | `/api/clients`, `/api/manifests`, `/api/menu-items`, `/api/sync` |
+| Server DB | Turso (SQLite edge DB) | Via `@libsql/client`, lazy table creation + migration |
 | Local DB | IndexedDB via `idb` | Schema: clients, menuItems, manifests, stops |
+| Sync | localStorage queue | Mutations queued locally, auto-sync every 30s to Turso |
+| PWA | `@ducanh2912/next-pwa` | Service worker in `public/sw.js`, disabled in dev |
+| Maps | Leaflet (raw, not react-leaflet) | `react-leaflet` v5 installed but unused; all map code uses raw Leaflet API |
+| Offline tiles | Workbox `CacheFirst` | OSM tiles cached for 30 days, 2000 entries |
+| Clustering | `leaflet.markercluster` | DeliveryMap only — DriverView has no clustering |
 | Styles | Tailwind CSS v4 | Via `@tailwindcss/postcss` |
 | TypeScript | Strict mode | Path alias `@/*` → `./src/*` |
 
-## Architecture (current)
+## Architecture
 
-- `src/app/page.tsx` — main page, tab navigation (Map / Clients / Routes / Menu)
-- `src/components/DeliveryMap.tsx` — Leaflet map centered on Sebeș (45.95, 23.57)
-- `src/components/PinCard.tsx` — slide-up card when pin is tapped
-- `src/components/PinDropMap.tsx` — interactive map for dropping/editing pins (used in client form)
-- `src/components/DriverView.tsx` — driver mode: color-coded pins, status updates, progress bar
-- `src/components/markerIcons.ts` — custom colored Leaflet markers (gray/green/red)
-- `src/components/ClientForm.tsx` — create/edit client with address fields + pin-drop
-- `src/components/ClientList.tsx` — search/filter, edit, delete clients
-- `src/components/MenuForm.tsx` — create/edit menu items
-- `src/components/MenuList.tsx` — list menu items with edit/delete
-- `src/components/ManifestForm.tsx` — edit manifest: add/remove stops, reorder, assign menu
-- `src/components/ManifestList.tsx` — list manifests with clone/clone blank/drive/delete
-- `src/lib/db.ts` — IndexedDB schema and initialization (idb wrapper)
-- `src/lib/clients.ts` — client CRUD operations
-- `src/lib/menus.ts` — menu item CRUD operations
-- `src/lib/manifests.ts` — manifest CRUD + clone most recent
-- `src/data/hardcoded.ts` — 8 hardcoded clients (legacy, map now reads from IndexedDB)
-- `src/types/index.ts` — shared TypeScript interfaces
+```
+src/
+  app/
+    page.tsx              — main page, tab navigation (Map/Clients/Routes/Menu)
+    api/
+      clients/route.ts    — GET/POST/PUT/DELETE for clients (async libsql)
+      manifests/route.ts  — GET/POST/PUT/DELETE for manifests
+      menu-items/route.ts — GET/POST/PUT/DELETE for menu items
+      sync/route.ts       — POST: batch apply mutations + return changes since timestamp
+  components/
+    DeliveryMap.tsx       — Leaflet map with marker clustering, manifest/tag/section filters
+    DriverView.tsx        — driver mode: color-coded markers, walk-in support, section tabs
+    PinCard.tsx           — slide-up detail card for map pins
+    PinDropMap.tsx        — interactive pin-drop map (used by DriverView walk-ins)
+    markerIcons.ts        — custom colored Leaflet divIcons (lazy-loaded, SSR-safe)
+    ClientForm.tsx        — create/edit client, copy-from-existing, coordinate input + map preview
+    ClientList.tsx        — search/filter, edit, delete, export/import JSON backup
+    MenuForm.tsx          — create/edit menu items
+    MenuList.tsx          — menu item list with edit/delete
+    ManifestForm.tsx      — section management, stop reorder, menu/section assignment
+    ManifestList.tsx      — list manifests with clone/clone blank/drive/delete
+  lib/
+    db.ts                 — IndexedDB schema and initialization (idb wrapper)
+    clients.ts            — client CRUD + sync queueing + getAllTags()
+    menus.ts              — menu item CRUD + sync queueing
+    manifests.ts          — manifest CRUD + cloneMostRecentManifest + getAllManifests
+    sync.ts               — queueMutation, pushSync, applyServerChanges, startAutoSync
+    server/
+      db.ts               — Turso client via @libsql/client, lazy table creation + schema migration
+  types/
+    index.ts              — Client, Stop, ManifestSection, MenuItem, DailyManifest
+```
 
-## Hard constraints
+## Sync architecture
 
-- **Fully offline-capable** during delivery — no assumptions about connectivity
-- **$0 running cost** — no paid APIs, no subscriptions, no cloud services
-- **Single user** — no auth, no multi-tenant, no role system
-- **Self-hosted** on NAS/home lab
-- Delivery area: **Sebeș, Alba County, Romania** + ~5km radius
-- **Manual pin-drop** for coordinates — no Nominatim geocoding required
-- **Safari on iPhone** — primary driver device
+- All CRUD operations go through `src/lib/clients.ts` / `menus.ts` / `manifests.ts`
+- Each mutation is queued in localStorage via `queueMutation()` (key: `delbg_sync_queue`)
+- `pushSync()` sends queue + `lastSyncTimestamp` to `/api/sync`
+- Server applies mutations to Turso via `INSERT ... ON CONFLICT DO UPDATE`
+- Server returns all rows changed since `lastSyncTimestamp`
+- Client applies server changes to IndexedDB via `applyServerChanges()`
+- **Full-sync cleanup** (only when `lastSyncTimestamp` is null): deletes local entries not in server response — removes stale data from schema migrations
+- Auto-sync runs every 30s + on `online` event
+- Initial sync runs explicitly on page load in `page.tsx` useEffect
 
-## Key design decisions
+**Critical sync bug that was fixed:** `applyServerChanges` cleanup must ONLY run on full sync (first load). On incremental syncs, the server returns only changes — running cleanup would delete unchanged local entries.
 
-- One menu per day, same for every client
-- Clone from most recent manifest (not necessarily yesterday)
-- Single route template for v1
-- Address format: "Strada X nr. 5 bl. Y ap. Z" (all optional except street + number)
-- Planner = Driver = same person, different devices
-- Street field stores name only (e.g. "Mihai Viteazu"), display adds "Strada" prefix
+## Turso schema
+
+Database: `delbg-dariusrobu` on `aws-eu-west-1`
+
+**`clients`:** id TEXT PK, name TEXT, street TEXT, number TEXT, bloc TEXT, apartment TEXT, lat REAL, lng REAL, phone TEXT, notes TEXT, tags_json TEXT, updated_at TEXT
+
+**`menu_items`:** id TEXT PK, name TEXT, description TEXT, date TEXT, updated_at TEXT
+
+**`manifests`:** id TEXT PK, date TEXT, stops_json TEXT (array of Stop), sections_json TEXT (array of ManifestSection), updated_at TEXT
+
+**Schema migration** (`src/lib/server/db.ts`): detects old schema (has `address` column in clients) and drops/recreates tables. This runs on every cold start but is idempotent.
 
 ## IndexedDB schema
 
@@ -81,46 +103,38 @@ Database: `delbg`, version 1
 - `manifests` — keyPath: `id`, index: `by-date`
 - `stops` — keyPath: `id`, indexes: `by-manifest`, `by-client`
 
-## Phased build plan
+## Deployment
 
-- **Phase 1 (complete):** Static map + hardcoded pins ✓
-- **Phase 2 (complete):** IndexedDB + client/menu CRUD (pin-drop for coords) ✓
-- **Phase 3 (complete):** Daily manifest + route planning (clone, edit, reorder) ✓
-- **Phase 4 (current):** Driver view + status updates (color-coded pins, delivered/skipped) ✓
-- **Phase 5:** Backend + sync (Next.js API routes + SQLite)
-- **Phase 6:** Offline maps + walk-ins + clustering + polish
+- **Vercel project:** `del-bg` at `del-bg.vercel.app` (production)
+- **Linked via** `.vercel/project.json` (do not delete)
+- **GitHub push** triggers auto-deploy
+- **Env vars** (Vercel dashboard, not in repo):
+  - `TURSO_DATABASE_URL` = `libsql://delbg-dariusrobu.aws-eu-west-1.turso.io`
+  - `TURSO_AUTH_TOKEN` = (generated via `turso db tokens create delbg`)
+- `.env.local` has same vars locally (gitignored via `.env*` rule)
+- **Vercel Deployment Protection** must be disabled in production (Settings → Deployment Protection)
 
-## File structure
+## Hard constraints
 
-```
-src/
-  app/
-    layout.tsx      — root layout, PWA metadata, viewport config
-    page.tsx        — main page, tab navigation (Map/Clients/Routes/Menu)
-    globals.css     — Tailwind imports, Leaflet fixes, overscroll-behavior
-  components/
-    DeliveryMap.tsx — Leaflet map with markers
-    PinCard.tsx     — slide-up detail card
-    PinDropMap.tsx  — interactive pin-drop map
-    DriverView.tsx  — driver mode: color-coded map, status updates
-    markerIcons.ts  — custom colored Leaflet markers
-    ClientForm.tsx  — create/edit client form
-    ClientList.tsx  — client list with search
-    MenuForm.tsx    — create/edit menu form
-    MenuList.tsx    — menu item list
-    ManifestForm.tsx  — edit manifest stops/order/menu
-    ManifestList.tsx  — list manifests with clone/drive/delete
-  lib/
-    db.ts           — IndexedDB schema and initialization
-    clients.ts      — client CRUD operations
-    menus.ts        — menu item CRUD operations
-    manifests.ts    — manifest CRUD + clone most recent
-  data/
-    hardcoded.ts    — legacy hardcoded test data
-  types/
-    index.ts        — Client, Stop, MenuItem, DailyManifest interfaces
-public/
-  manifest.json     — PWA manifest
-  icons/            — PWA icons (placeholder, needs real icons)
-  sw.js             — generated service worker (do not edit)
-```
+- **Fully offline-capable** during delivery — no assumptions about connectivity
+- **$0 running cost** — no paid APIs, no subscriptions, no cloud services (Turso free tier)
+- **Single user** — no auth, no multi-tenant, no role system
+- Delivery area: **Sebeș, Alba County, Romania** + ~5km radius
+- **Manual pin-drop** for coordinates — no geocoding
+- **Safari on iPhone** — primary driver device (test PWA behavior)
+- **One menu per day**, same for every client
+- Street field stores name only (e.g. "Kogalniceanu"), display adds "Strada" prefix
+- Address format: "Strada X nr. 5 bl. Y ap. Z" (all optional except street + number)
+- Planner = Driver = same person, different devices
+
+## Gotchas for agents
+
+- **Leaflet SSR:** All Leaflet code uses raw API, NOT react-leaflet. `markerIcons.ts` uses lazy `require("leaflet")`. Components using Leaflet (`DeliveryMap`, `DriverView`, `ClientForm`) are dynamically imported with `ssr: false`.
+- **fitBounds race:** `fitBounds` must be deferred to `requestAnimationFrame` after map init, otherwise Leaflet throws `_leaflet_pos` error (map pane not laid out yet).
+- **Null coordinates:** Always guard `client.lat`/`client.lng` with `typeof x !== "number"` before passing to `L.marker()` — clients from old schema or incomplete data can have null coords.
+- **ESLint suppressions:** `react-hooks/set-state-in-effect` is suppressed in: `ClientList.tsx`, `MenuList.tsx`, `ManifestList.tsx`, `page.tsx`, `DeliveryMap.tsx`.
+- **Tag input pattern:** ClientForm and ManifestForm both have tag inputs with autocomplete from `getAllTags()`. Use the same `onBlur → setTimeout` pattern for dropdown dismissal.
+- **Manifest sections** are per-manifest (not global), embedded in the manifest object.
+- **Client tags** are free-form strings (not predefined).
+- **Sync mutation format:** `{ entityType, entityId, action, payload, timestamp }` — all CRUD operations queue mutations, even if push fails (queue persists in localStorage).
+- **Import/export:** ClientList has JSON export/import for backup. Import skips clients with duplicate IDs. Export downloads `delbg-clients-YYYY-MM-DD.json`.
