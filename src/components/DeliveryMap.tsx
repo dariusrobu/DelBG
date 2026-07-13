@@ -118,15 +118,18 @@ export default function DeliveryMap({
 
     map.addLayer(markers);
 
-    // Fit bounds to show all markers
-    if (filteredClients.length > 0) {
-      const bounds = L.latLngBounds(
-        filteredClients.map((c) => [c.lat, c.lng] as [number, number])
-      );
-      map.fitBounds(bounds, { padding: [40, 40] });
-    }
-
     mapInstanceRef.current = map;
+
+    // Fit bounds after layout settles to avoid _leaflet_pos error
+    if (filteredClients.length > 0) {
+      requestAnimationFrame(() => {
+        if (!mapInstanceRef.current) return;
+        const bounds = L.latLngBounds(
+          filteredClients.map((c) => [c.lat, c.lng] as [number, number])
+        );
+        map.fitBounds(bounds, { padding: [40, 40] });
+      });
+    }
 
     return () => {
       map.remove();
