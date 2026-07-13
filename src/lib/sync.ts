@@ -67,7 +67,7 @@ export async function pushSync(): Promise<boolean> {
     const data = await res.json();
 
     // Apply server changes to local IndexedDB
-    await applyServerChanges(data.changes);
+    await applyServerChanges(data.changes, !lastSync);
 
     // Update last sync timestamp
     setLastSyncTimestamp(data.serverTimestamp);
@@ -86,7 +86,7 @@ async function applyServerChanges(changes: {
   clients: Record<string, unknown>[];
   menuItems: Record<string, unknown>[];
   manifests: Record<string, unknown>[];
-}): Promise<void> {
+}, isFullSync: boolean): Promise<void> {
   const db = await getDB();
   const serverClientIds = new Set(changes.clients.map((c) => c.id as string));
   const serverMenuIds = new Set(changes.menuItems.map((m) => m.id as string));
@@ -132,23 +132,25 @@ async function applyServerChanges(changes: {
     await db.put("manifests", manifest);
   }
 
-  // Full-sync cleanup: remove local entries not present on server
-  const allClients = await db.getAll("clients");
-  for (const local of allClients) {
-    if (!serverClientIds.has(local.id)) {
-      await db.delete("clients", local.id);
+  // Full-sync cleanup: only on first sync when server returns ALL data
+  if (isFullSync) {
+    const allClients = await db.getAll("clients");
+    for (const local of allClients) {
+      if (!serverClientIds.has(local.id)) {
+        await db.delete("clients", local.id);
+      }
     }
-  }
-  const allMenus = await db.getAll("menuItems");
-  for (const local of allMenus) {
-    if (!serverMenuIds.has(local.id)) {
-      await db.delete("menuItems", local.id);
+    const allMenus = await db.getAll("menuItems");
+    for (const local of allMenus) {
+      if (!serverMenuIds.has(local.id)) {
+        await db.delete("menuItems", local.id);
+      }
     }
-  }
-  const allManifests = await db.getAll("manifests");
-  for (const local of allManifests) {
-    if (!serverManifestIds.has(local.id)) {
-      await db.delete("manifests", local.id);
+    const allManifests = await db.getAll("manifests");
+    for (const local of allManifests) {
+      if (!serverManifestIds.has(local.id)) {
+        await db.delete("manifests", local.id);
+      }
     }
   }
 }
