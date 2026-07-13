@@ -65,6 +65,7 @@ export default function DeliveryMap({
   );
 
   const filteredClients = clients.filter((c) => {
+    if (typeof c.lat !== "number" || typeof c.lng !== "number") return false;
     const matchesTag = !filterTag || c.tags?.includes(filterTag);
     const matchesSection =
       filterSection === null ||
