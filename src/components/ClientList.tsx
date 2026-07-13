@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Client } from "@/types";
-import { getAllClients, deleteClient, searchClients, getAllTags } from "@/lib/clients";
+import { getAllClients, deleteClient, searchClients, getAllTags, createClient } from "@/lib/clients";
 
 interface ClientListProps {
   onEdit: (client: Client) => void;
@@ -15,6 +15,8 @@ export default function ClientList({ onEdit, onAddNew }: ClientListProps) {
   const [filterTag, setFilterTag] = useState<string>("");
   const [allTags, setAllTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadClients = useCallback(async (q?: string) => {
     setLoading(true);
@@ -33,6 +35,67 @@ export default function ClientList({ onEdit, onAddNew }: ClientListProps) {
     if (!confirm("Delete this client?")) return;
     await deleteClient(id);
     loadClients(query);
+  };
+
+  const handleExport = () => {
+    const data = JSON.stringify(clients, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `delbg-clients-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!Array.isArray(data)) {
+        setImportMsg("Invalid file: expected a JSON array");
+        return;
+      }
+
+      const existingIds = new Set(clients.map((c) => c.id));
+      let imported = 0;
+      let skipped = 0;
+
+      for (const item of data) {
+        if (!item.street || !item.number || typeof item.lat !== "number" || typeof item.lng !== "number") {
+          skipped++;
+          continue;
+        }
+        if (existingIds.has(item.id)) {
+          skipped++;
+          continue;
+        }
+        await createClient({
+          name: item.name || undefined,
+          street: item.street,
+          number: item.number,
+          bloc: item.bloc || undefined,
+          apartment: item.apartment || undefined,
+          lat: item.lat,
+          lng: item.lng,
+          phone: item.phone || undefined,
+          notes: item.notes || undefined,
+          tags: item.tags ?? [],
+        });
+        imported++;
+      }
+
+      setImportMsg(`Imported ${imported}, skipped ${skipped}`);
+      loadClients(query);
+    } catch {
+      setImportMsg("Failed to parse file");
+    }
+
+    setTimeout(() => setImportMsg(null), 4000);
   };
 
   const filteredClients = filterTag
@@ -101,6 +164,33 @@ export default function ClientList({ onEdit, onAddNew }: ClientListProps) {
       >
         + Add New Client
       </button>
+
+      {/* Import/Export */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleExport}
+          disabled={clients.length === 0}
+          className="flex-1 py-2 border border-gray-300 bg-white text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
+        >
+          ↓ Export clients
+        </button>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex-1 py-2 border border-gray-300 bg-white text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          ↑ Import clients
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          onChange={handleImport}
+          className="hidden"
+        />
+      </div>
+      {importMsg && (
+        <p className="text-xs text-center text-gray-600 bg-gray-50 rounded-lg px-3 py-1.5">{importMsg}</p>
+      )}
 
       {/* List */}
       {loading ? (
