@@ -137,11 +137,6 @@ export function startAutoSync(intervalMs = 30000): void {
   if (typeof window === "undefined") return;
   if (syncInterval) return;
 
-  // Try to sync immediately if online
-  if (navigator.onLine) {
-    pushSync();
-  }
-
   // Listen for online events
   window.addEventListener("online", () => {
     pushSync();

@@ -6,7 +6,7 @@ import { Client, MenuItem, DailyManifest, ManifestSection } from "@/types";
 import { getAllClients, createClient, updateClient } from "@/lib/clients";
 import { createMenuItem, updateMenuItem } from "@/lib/menus";
 import { createManifest, getAllManifests } from "@/lib/manifests";
-import { startAutoSync } from "@/lib/sync";
+import { startAutoSync, pushSync } from "@/lib/sync";
 import PinCard from "@/components/PinCard";
 import ClientList from "@/components/ClientList";
 import MenuList from "@/components/MenuList";
@@ -83,6 +83,11 @@ export default function Home() {
     loadClients();
     loadManifests();
     startAutoSync();
+    // Initial sync: pull all data from server, then reload local state
+    pushSync().then(() => {
+      loadClients();
+      loadManifests();
+    });
   }, [loadClients, loadManifests]);
 
   const handleClientSelect = useCallback((client: Client) => {
